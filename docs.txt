@@ -36,6 +36,8 @@ model = nn.DataParallel(model, device_ids=device_ids)
 DistributedDataParallel Pytorch Training --> assign each gpu id for each process, and excetued in the independent way, not influence each other
 There are two major things that are needed to be done for converting your PyTorch code to DistributedDataParallel. Call the init_process_group function with nccl backend and wrap the ResNet-50 model around the DistributedDataParallel module. In addition to this, we are going to use local_rank as the device_id instead of using all the devices as we used in DataParallel. Local_rank is the process id assigned to the multi-processing job and each process is assigned one GPU with it.
 
+Note: if you want to display result, log metric,... use global_rank.
+
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
