@@ -1,0 +1,67 @@
+Nodes
+Nodes are physical or virtual machines that are being used in training jobs. For reference in the visual shared above the training process is using two nodes having node ids 0 and 1. The only pre-requisite for communication between the nodes used in the training job is that they should be connected via high-speed LAN in order to reduce latency.
+World Size
+World size is the number of processes invoked during the training job. Generally, each process is assigned one GPU therefore considering the above visual the world size for the above training job is 4.
+Local Rank
+To simplify the concept of local rank we can say that local rank is a process id with respect to a given node. For example, in Node 0 the local rank would be 0 and 1. Where for Node 1 the local rank would be 0 and 1.
+Global Rank or Rank
+The global rank is the process id with respect to the training job. For example in the visual above the Global Ranks are 0, 1, 2, and 3.
+
+DataParallel is multi-threading, but DistributedDataParallel is multi-processing.
+Multithreading is a technique in which multiple threads are run in parallel in the same process. Threads share the same address space of the process.
+Multiprocessing is a technique in which multiple processes are run in parallel. Each process has its own separate address space, i.e. memory is not shared between processes.
+
+
+Examples:
+Nodes: virtual machines or physical machines
+World size: is the number of processes invoked during the training job.
+Local Rank: is a process id with respect to a given node. (in local training job (node))
+Global rank: is the process id with respect to the training job. (in all training job)
+
+Note: 1 process maybe use many gpu concurrently.
+
+
+Pipeline:
+We will first create a standalone PyTorch training script after that we will convert it to Data Parallel and last we convert that script to Distributed Data Parallel (DDP).
+
+####
+Pytorch training: --> single gpu, you must be determined gpu id which you will use.
+device = torch.device('cuda:0')
+model = model.to(device)
+
+DataParallel PyTorch Training --> multi gpu, but all gpu will be loaded for model.
+device_ids = [i for i in range(torch.cuda.device_count())]
+model = nn.DataParallel(model, device_ids=device_ids)
+
+DistributedDataParallel Pytorch Training --> assign each gpu id for each process, and excetued in the independent way, not influence each other
+There are two major things that are needed to be done for converting your PyTorch code to DistributedDataParallel. Call the init_process_group function with nccl backend and wrap the ResNet-50 model around the DistributedDataParallel module. In addition to this, we are going to use local_rank as the device_id instead of using all the devices as we used in DataParallel. Local_rank is the process id assigned to the multi-processing job and each process is assigned one GPU with it.
+
+from torch.nn.parallel import DistributedDataParallel as DDP
+import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
+dist.init_process_group("nccl")
+local_rank = int(os.environ["LOCAL_RANK"])
+global_rank = int(os.environ["RANK"])
+BATCH_SIZE = 256 // int(os.environ["WORLD_SIZE"])
+sampler = DistributedSampler(data)
+data_loader = torch.utils.data.DataLoader(data,
+                                          batch_size=BATCH_SIZE,
+                                          shuffle=False,
+                                          sampler=sampler,
+                                          num_workers=WORKERS)
+
+torch.cuda.set_device(local_rank)
+torch.cuda.empty_cache()
+model = timm.create_model(MODEL_NAME, pretrained=True, num_classes=CLASSES)
+model = model.to('cuda:' + str(local_rank))
+model = DDP(model, device_ids=[local_rank])
+
+Best Practices for Optimizing Training Pipelines
+I will be sharing suggestions in the form of bullet points that can help improve in optimizing training jobs which can be: reducing memory footprint, optimizing data loader, faster training, etc.
+Use floating point 16 (fp16) or mixed precision for training your models
+Set num_workers= num_gpus*4 for DataLoading
+Set prefetch_factor value for DataLoading
+Enable persistent_workers
+Check GPU utilization to be 100% before starting the training job. GPU utilization can be profiled using various tools personally I use nvitop
+Increase batch size until you use all the GPU memory
+Use SyncBatchNorm if you are doing distributed training and have a small batch size
